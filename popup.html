@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Form Tamer</title>
+    <style>
+      body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; min-width: 280px; padding: 12px; }
+      .row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0; }
+      label { display: flex; gap: 8px; align-items: center; }
+      .hint { color: #666; font-size: 12px; margin-top: 8px; }
+      .sep { height: 1px; background: #ddd; margin: 10px 0; }
+      button { padding: 6px 10px; border: 1px solid #ccc; background: #f9f9f9; cursor: pointer; border-radius: 6px; }
+      button:hover { background: #f1f1f1; }
+    </style>
+  </head>
+  <body>
+    <h3>Form Tamer</h3>
+
+    <div class="row">
+      <label><input type="checkbox" id="enabled"> Enabled</label>
+      <button id="applyNow">Apply now</button>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="row">
+      <label><input type="checkbox" id="fixPatterns"> Fix pattern “/…/”</label>
+    </div>
+
+    <div class="row">
+      <label><input type="checkbox" id="killValidation"> Disable HTML5 validation</label>
+    </div>
+
+    <p class="hint">Works on all sites. No data collected.</p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
