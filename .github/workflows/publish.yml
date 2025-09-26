@@ -1,9 +1,10 @@
 name: Publish to Chrome Web Store
 
 on:
+  workflow_dispatch:        # ручной запуск из Actions
   push:
     tags:
-      - "v*"   # запускается только при пуше тега вида v1.0.0
+      - "v*"
 
 jobs:
   publish:
@@ -13,17 +14,9 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install dependencies
-        run: npm ci
-
       - name: Pack extension
         run: |
-          mkdir dist
+          mkdir -p dist
           zip -r dist/extension.zip . \
             -x "*.git*" \
             -x "node_modules/*" \
@@ -33,7 +26,7 @@ jobs:
         uses: Klemensas/chrome-extension-upload-action@v1.3
         with:
           refresh-token: ${{ secrets.REFRESH_TOKEN }}
-          client-id: ${{ secrets.CLIENT_ID }}
+          client-id:     ${{ secrets.CLIENT_ID }}
           client-secret: ${{ secrets.CLIENT_SECRET }}
-          extension-id: ${{ secrets.EXTENSION_ID }}
-          zip-path: dist/extension.zip
+          extension-id:  ${{ secrets.EXTENSION_ID }}
+          zip-path:      dist/extension.zip
