@@ -1,32 +1,24 @@
 name: Publish to Chrome Web Store
 
 on:
-  workflow_dispatch:        # ручной запуск из Actions
   push:
     tags:
-      - "v*"
+      - 'v*'
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Pack extension
-        run: |
-          mkdir -p dist
-          zip -r dist/extension.zip . \
-            -x "*.git*" \
-            -x "node_modules/*" \
-            -x "dist/*"
+        run: zip -r form-tamer.zip . -x "*.git*"
 
       - name: Upload & Publish
         uses: Klemensas/chrome-extension-upload-action@v1.3
         with:
           refresh-token: ${{ secrets.REFRESH_TOKEN }}
-          client-id:     ${{ secrets.CLIENT_ID }}
+          client-id: ${{ secrets.CLIENT_ID }}
           client-secret: ${{ secrets.CLIENT_SECRET }}
-          extension-id:  ${{ secrets.EXTENSION_ID }}
-          zip-path:      dist/extension.zip
+          app-id: ${{ secrets.EXTENSION_ID }}
+          file-name: form-tamer.zip
