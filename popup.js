@@ -3,7 +3,13 @@ const STATE_KEY = "formtamer_state";
 function getState() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(STATE_KEY, (res) => {
-      const def = { enabled: true, fixPatterns: true, killValidation: false, killAggressive: false };
+      const def = {
+        enabled: true,
+        fixPatterns: true,
+        killValidation: false,
+        killAggressive: false,
+        showPostcodeHints: true
+      };
       resolve(res?.[STATE_KEY] ? { ...def, ...res[STATE_KEY] } : def);
     });
   });
@@ -23,6 +29,7 @@ function setState(patch) {
   const fixPatterns = document.getElementById("fixPatterns");
   const killValidation = document.getElementById("killValidation");
   const killAggressive = document.getElementById("killAggressive");
+  const showPostcodeHints = document.getElementById("showPostcodeHints");
   const applyNow = document.getElementById("applyNow");
 
   const s = await getState();
@@ -30,14 +37,16 @@ function setState(patch) {
   fixPatterns.checked = s.fixPatterns;
   killValidation.checked = s.killValidation;
   killAggressive.checked = s.killAggressive;
+  showPostcodeHints.checked = s.showPostcodeHints;
 
   enabled.onchange = () => setState({ enabled: enabled.checked });
   fixPatterns.onchange = () => setState({ fixPatterns: fixPatterns.checked });
   killValidation.onchange = () => setState({ killValidation: killValidation.checked });
   killAggressive.onchange = () => setState({ killAggressive: killAggressive.checked });
+  showPostcodeHints.onchange = () => setState({ showPostcodeHints: showPostcodeHints.checked });
 
   applyNow.onclick = async () => {
-    await setState({ __ping: Date.now() }); // retrigger content script observers
+    await setState({ __ping: Date.now() });
     window.close();
   };
 })();
