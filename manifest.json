@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Form Tamer: fix broken patterns & disable validation",
   "description": "Fixing regex pattern=\"/…/\" on pages and allowes to turn off HTML5-validation in one click",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "icons": {},
   "permissions": ["storage"],
   "action": {

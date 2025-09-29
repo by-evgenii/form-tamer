@@ -1,125 +1,161 @@
 (() => {
-  const STATE_KEY = "formtamer_state"; // { enabled: boolean, fixPatterns: boolean, killValidation: boolean }
+  const STATE_KEY = "formtamer_state"; // { enabled, fixPatterns, killValidation, killAggressive }
 
-  // --- utils
-  const getState = () =>
-    new Promise(resolve => {
-      chrome.storage?.sync?.get(STATE_KEY, (res) => {
-        const def = { enabled: true, fixPatterns: true, killValidation: false };
-        resolve(res?.[STATE_KEY] ? { ...def, ...res[STATE_KEY] } : def);
-      });
+  // ---------- storage
+  const getState = () => new Promise(r => {
+    chrome.storage?.sync?.get(STATE_KEY, res => {
+      const def = { enabled: true, fixPatterns: true, killValidation: false, killAggressive: false };
+      r(res?.[STATE_KEY] ? { ...def, ...res[STATE_KEY] } : def);
     });
-
-  const setState = (patch) =>
-    new Promise(resolve => {
-      getState().then(state => {
-        const next = { ...state, ...patch };
-        chrome.storage?.sync?.set({ [STATE_KEY]: next }, () => resolve(next));
-      });
+  });
+  const setState = p => new Promise(r => {
+    getState().then(s => {
+      const next = { ...s, ...p };
+      chrome.storage?.sync?.set({ [STATE_KEY]: next }, () => r(next));
     });
+  });
 
-  // --- core
-  function stripJsSlashes(pattern) {
-    // if the expresions of the pattern ends with '/', ommiting the '/'
-    // E.g: "/https:\\/\\/www\\.linkedin\\.com\\/in\\/.*?/" -> "https:\\/\\/www\\.linkedin\\.com\\/in\\/.*?"
-    if (typeof pattern !== "string") return pattern;
-    if (pattern.length >= 2 && pattern.startsWith("/") && pattern.endsWith("/")) {
-      return pattern.slice(1, -1);
-    }
-    return pattern;
-  }
+  // ---------- utils
+  const stripJsSlashes = p =>
+    (typeof p === "string" && p.length >= 2 && p[0] === "/" && p[p.length - 1] === "/")
+      ? p.slice(1, -1) : p;
 
+  // ---------- features
   function fixInputPatterns(root = document) {
-    const inputs = root.querySelectorAll("input[pattern], textarea[pattern], input[data-pattern], textarea[data-pattern]");
-    for (const el of inputs) {
-      const attr = el.getAttribute("pattern");
-      if (attr) {
-        const fixed = stripJsSlashes(attr);
-        if (fixed !== attr) {
-          el.setAttribute("pattern", fixed);
-          el.dataset.formTamerFixed = "pattern";
+    root.querySelectorAll('input[pattern],textarea[pattern],input[data-pattern],textarea[data-pattern]')
+      .forEach(el => {
+        const pat = el.getAttribute("pattern");
+        if (pat) {
+          const fixed = stripJsSlashes(pat);
+          if (fixed !== pat) el.setAttribute("pattern", fixed);
         }
-      }
-      // In case for custome storage of a pattern
-      const dataAttr = el.getAttribute("data-pattern");
-      if (dataAttr) {
-        const fixed = stripJsSlashes(dataAttr);
-        if (fixed !== dataAttr) {
-          el.setAttribute("data-pattern", fixed);
-          el.dataset.formTamerFixed = "pattern";
+        const dpat = el.getAttribute("data-pattern");
+        if (dpat) {
+          const fixed2 = stripJsSlashes(dpat);
+          if (fixed2 !== dpat) el.setAttribute("data-pattern", fixed2);
         }
-      }
-    }
-
-    // Greenhouse/Angular/React some times use pattern on <input> through attribute's props,
-    // but simultaniously checking title/aria… — here no go.
-  }
-
-  function killValidation(root = document) {
-    // Set off native HTML5-validation
-    const forms = root.querySelectorAll("form");
-    forms.forEach(f => {
-      f.setAttribute("novalidate", "novalidate");
-      f.dataset.formTamerFixed = "novalidate";
-    });
-
-    const inputs = root.querySelectorAll("input, textarea, select");
-    inputs.forEach(el => {
-      // removing required/maxlength/minlength/min/max/pattern/step
-      if (el.hasAttribute("required")) el.removeAttribute("required");
-      ["pattern","min","max","maxlength","minlength","step"].forEach(a => {
-        if (el.hasAttribute(a)) el.removeAttribute(a);
       });
+  }
 
-      // some forms interchange validity through setCustomValidity - nullifying
+  function killHtml5Validation(root = document) {
+    root.querySelectorAll("form").forEach(f => f.setAttribute("novalidate", "novalidate"));
+    root.querySelectorAll("input,textarea,select").forEach(el => {
+      ["required","pattern","min","max","maxlength","minlength","step"].forEach(a => el.removeAttribute(a));
       try { el.setCustomValidity && el.setCustomValidity(""); } catch {}
-      // and on submit
-      el.addEventListener("invalid", (e) => { e.preventDefault(); }, true);
+      el.addEventListener("invalid", e => e.preventDefault(), true);
     });
   }
 
+  // ---------- SAFE aggressive bypass (no cloning, no loops)
+  let protoPatched = false;
+  let nativeSubmit = null;
+
+  function patchPrototypesOnce() {
+    if (protoPatched) return;
+    protoPatched = true;
+    try {
+      const fp = HTMLFormElement.prototype;
+      nativeSubmit = fp.submit; // keep native
+      if (!fp.__ft_patched) {
+        const origCheck = fp.checkValidity;
+        const origReport = fp.reportValidity;
+        fp.checkValidity = function() { try { return true; } catch { return true; } };
+        fp.reportValidity = function() { try { return true; } catch { return true; } };
+        fp.__ft_patched = { origCheck, origReport };
+      }
+    } catch {}
+
+    try {
+      const ip = HTMLInputElement.prototype;
+      if (!ip.__ft_patched) {
+        const orig = ip.setCustomValidity;
+        ip.setCustomValidity = function() { /* ignore custom errors */ };
+        ip.__ft_patched = { orig };
+      }
+    } catch {}
+    try {
+      const tp = HTMLTextAreaElement.prototype;
+      if (!tp.__ft_patched) {
+        const orig = tp.setCustomValidity;
+        tp.setCustomValidity = function() {};
+        tp.__ft_patched = { orig };
+      }
+    } catch {}
+  }
+
+  function attachSubmitBypass(root = document) {
+    root.querySelectorAll("form").forEach(form => {
+      if (form.dataset.ftBypassAttached) return;
+      form.dataset.ftBypassAttached = "1";
+      form.setAttribute("novalidate", "novalidate");
+
+      // capture submit first, stop other handlers from blocking
+      form.addEventListener("submit", (ev) => {
+        // If something later calls preventDefault, we still ensure a native submit.
+        // We don't resubmit twice.
+        if (form.__ft_submitting) return;
+        // Defer to end of event loop to see if anyone blocked it
+        setTimeout(() => {
+          if (form.__ft_submitting) return;
+          if (ev.defaultPrevented) {
+            try {
+              form.__ft_submitting = true;
+              nativeSubmit.call(form); // native submit doesn't fire 'submit' again
+            } finally {
+              setTimeout(() => { form.__ft_submitting = false; }, 200);
+            }
+          }
+        }, 0);
+      }, true);
+    });
+  }
+
+  function killAggressiveValidation(root = document) {
+    patchPrototypesOnce();
+    attachSubmitBypass(root);
+  }
+
+  // ---------- observer (throttled)
   let observer = null;
+  let scheduled = false;
+  function rescanThrottled(state) {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      if (state.fixPatterns) fixInputPatterns(document);
+      if (state.killValidation) killHtml5Validation(document);
+      if (state.killAggressive) killAggressiveValidation(document);
+    });
+  }
 
   async function apply(root = document) {
     const state = await getState();
     if (!state.enabled) return;
 
     if (state.fixPatterns) fixInputPatterns(root);
-    if (state.killValidation) killValidation(root);
+    if (state.killValidation) killHtml5Validation(root);
+    if (state.killAggressive) killAggressiveValidation(root);
 
-    // Monitoring dynamics
     if (!observer) {
-      observer = new MutationObserver((muts) => {
-        const needsScan = muts.some(m => {
-          return [...m.addedNodes].some(n => n.nodeType === 1);
-        });
-        if (needsScan) {
-          if (state.fixPatterns) fixInputPatterns(document);
-          if (state.killValidation) killValidation(document);
-        }
-      });
+      observer = new MutationObserver(() => rescanThrottled(state));
       observer.observe(document.documentElement || document.body, { childList: true, subtree: true });
     }
   }
 
-  // Listening for changes in popup
   chrome.storage?.onChanged?.addListener((changes, area) => {
-    if (area === "sync" && changes[STATE_KEY]) {
-      apply();
-    }
+    if (area === "sync" && changes[STATE_KEY]) apply();
   });
 
-  // Initial run
   apply();
 
-  // Export for quick debug in console:
-  // window.FormTamer?.toggleKillValidation(true) и т.п.
+  // ---------- DevTools helpers
   window.FormTamer = {
-    async state() { return await getState(); },
-    async toggleEnabled(v) { return await setState({ enabled: !!v }); },
-    async toggleFixPatterns(v) { return await setState({ fixPatterns: !!v }); },
-    async toggleKillValidation(v) { return await setState({ killValidation: !!v }); },
-    runFixNow() { fixInputPatterns(document); },
-    runKillNow() { killValidation(document); }
+    state: () => getState(),
+    toggleEnabled: v => setState({ enabled: !!v }),
+    toggleFixPatterns: v => setState({ fixPatterns: !!v }),
+    toggleKillValidation: v => setState({ killValidation: !!v }),
+    toggleKillAggressive: v => setState({ killAggressive: !!v }),
+    runFixNow: () => fixInputPatterns(document),
   };
 })();
